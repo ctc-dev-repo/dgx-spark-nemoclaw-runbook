@@ -1,5 +1,6 @@
 ---
-# DGX Spark Multi-Model AI Development Environment — simplified 2-device layout
+# DGX Spark Multi-Model AI Development Environment — 3-tier layout
+# DGX Spark (inference) + Orin Nano (orchestration) + Jetson Mate (CRUCIBLE)
 # Run: ansible-playbook site.yml --ask-vault-pass --ask-become-pass
 # Preflight: ansible-playbook site.yml --syntax-check --ask-vault-pass
 
@@ -30,3 +31,11 @@
     - mcp_server
     - tunnel_gateway
     - monitoring
+
+- name: Jetson Mate — CRUCIBLE parallel build and test cluster
+  hosts: jetson_mate
+  become: true
+  vars_files:
+    - group_vars/vault.yml
+  roles:
+    - crucible_node

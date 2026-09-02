@@ -38,6 +38,10 @@
     block: |
       {{ dgx_ip }}   spark spark.local
       {{ orin_ip }}  jorin jorin.local
+      {{ jm1_ip }}   jm1 jm1.local
+      {{ jm2_ip }}   jm2 jm2.local
+      {{ jm3_ip }}   jm3 jm3.local
+      {{ jm4_ip }}   jm4 jm4.local
     marker: "# {mark} ANSIBLE MANAGED — stack hosts"
 
 handlers:

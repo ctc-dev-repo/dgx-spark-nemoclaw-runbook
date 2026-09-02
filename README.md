@@ -1,9 +1,11 @@
-# DGX Spark Multi-Model AI Development — Ansible Automation (v2)
+# DGX Spark Multi-Model AI Development — Ansible Automation (v3)
 
-Automates deployment of the simplified 2-device architecture:
+Automates deployment of the 3-tier architecture:
 - **DGX Spark** — inference server (NemoClaw + cold model services)
 - **Jetson Orin Nano** — all orchestration (triage model + MCP server +
   SSH tunnel gateway + Prometheus + Grafana)
+- **Jetson Mate (jm1-jm4)** — CRUCIBLE parallel build and test cluster
+  (Python stdlib HTTP executor, Docker sandboxed jobs, no pip deps)
 
 ## Setup
 
@@ -48,6 +50,12 @@ ansible-playbook site.yml --limit dgx_spark --ask-vault-pass --ask-become-pass
 
 # Orin Nano only (all orchestration roles)
 ansible-playbook site.yml --limit orin_nano --ask-vault-pass --ask-become-pass
+
+# CRUCIBLE nodes only (Jetson Mate)
+ansible-playbook site.yml --limit jetson_mate --ask-vault-pass --ask-become-pass
+
+# Single CRUCIBLE node
+ansible-playbook site.yml --limit jm1 --ask-vault-pass --ask-become-pass
 ```
 
 ## Verify Deployment
@@ -67,3 +75,9 @@ ansible-playbook playbooks/verify.yml --ask-vault-pass
 - Triage model download (~2.5 GB) runs once; subsequent runs are idempotent.
 - Role execution order on Orin Nano is deliberate:
   triage_model → mcp_server → tunnel_gateway → monitoring
+- CRUCIBLE nodes run Ubuntu 18.04 (JetPack 4.6) with Docker 19.x already
+  bundled — no additional packages are installed by the crucible_node role.
+- Each CRUCIBLE job runs in a Docker container with `--network none` and
+  `--memory 3g` for isolation. The executor requires no pip dependencies.
+- The `benchmark_implementations` MCP tool fans up to 4 code variants across
+  the available CRUCIBLE nodes in parallel and returns a comparative report.

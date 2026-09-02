@@ -12,9 +12,17 @@ jetson_user: "{{ vault_jetson_user }}"
 spark_ai_dir:   "/opt/spark-ai"
 mcp_server_dir: "/opt/mcp-server"
 models_dir:     "/opt/models"
+crucible_dir:   "/opt/crucible"
 
 # ── MCP Server ─────────────────────────────────────────────────────────────
 mcp_port: 8765
+
+# ── CRUCIBLE (Jetson Mate nodes) ───────────────────────────────────────────
+jm1_ip: "192.168.1.10"
+jm2_ip: "192.168.1.11"
+jm3_ip: "192.168.1.12"
+jm4_ip: "192.168.1.13"
+crucible_port: 8888
 
 # ── Triage model ───────────────────────────────────────────────────────────
 triage_port:        11434

@@ -4,6 +4,12 @@ spark ansible_host=192.168.1.100 ansible_user={{ vault_dgx_user }}
 [orin_nano]
 jorin ansible_host=192.168.1.20 ansible_user={{ vault_jetson_user }}
 
+[jetson_mate]
+jm1 ansible_host=192.168.1.10 ansible_user={{ vault_jetson_user }}
+jm2 ansible_host=192.168.1.11 ansible_user={{ vault_jetson_user }}
+jm3 ansible_host=192.168.1.12 ansible_user={{ vault_jetson_user }}
+jm4 ansible_host=192.168.1.13 ansible_user={{ vault_jetson_user }}
+
 [all:vars]
 ansible_ssh_private_key_file=~/.ssh/id_ed25519
 ansible_python_interpreter=/usr/bin/python3

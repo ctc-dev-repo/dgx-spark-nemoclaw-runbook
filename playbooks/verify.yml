@@ -86,3 +86,29 @@
       register: prom_targets
     - ansible.builtin.debug:
         msg: "Prometheus targets: {{ (prom_targets.json.data.activeTargets | length) }} active"
+
+- name: Verify Jetson Mate CRUCIBLE nodes
+  hosts: jetson_mate
+  tasks:
+    - name: Check crucible-executor is active
+      ansible.builtin.command: systemctl is-active crucible-executor
+      changed_when: false
+      register: crucible_status
+    - ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} crucible-executor: {{ crucible_status.stdout }}"
+
+    - name: Check executor health endpoint
+      ansible.builtin.uri:
+        url: "http://localhost:{{ crucible_port }}/health"
+        method: GET
+        status_code: 200
+      register: crucible_health
+    - ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} health: {{ crucible_health.json }}"
+
+    - name: Verify Docker is functional
+      ansible.builtin.command: docker run --rm arm64v8/alpine echo OK
+      changed_when: false
+      register: docker_check
+    - ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} Docker: {{ docker_check.stdout }}"

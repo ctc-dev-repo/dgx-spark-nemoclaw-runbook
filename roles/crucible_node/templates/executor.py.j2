@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+# Managed by Ansible — CRUCIBLE execution node (stdlib only, Python 3.6+)
+import json, subprocess, tempfile, time, os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+DOCKER_IMAGES = {
+    "rust":   "arm64v8/rust:latest",
+    "python": "arm64v8/python:3.12-slim",
+    "go":     "arm64v8/golang:latest",
+    "node":   "arm64v8/node:20-slim",
+}
+
+class JobHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self._respond(200, {"status": "ok", "node": "{{ inventory_hostname }}"})
+        else:
+            self._respond(404, {"error": "not found"})
+    def do_POST(self):
+        if self.path == "/execute":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length))
+            self._respond(200, run_job(body))
+        else:
+            self._respond(404, {"error": "not found"})
+    def _respond(self, code, data):
+        body = json.dumps(data).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", len(body))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, fmt, *args):
+        pass  # journald handles logging
+
+def run_job(job):
+    variant   = job.get("variant_name", "unnamed")
+    code      = job.get("code", "")
+    filename  = job.get("filename", "main.rs")
+    build_cmd = job.get("build_cmd", "cargo build --release 2>&1")
+    test_cmd  = job.get("test_cmd",  "cargo test 2>&1")
+    language  = job.get("language", "rust")
+    image     = DOCKER_IMAGES.get(language, "arm64v8/alpine")
+    timeout   = int(job.get("timeout_seconds", 120))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with open(os.path.join(tmpdir, filename), "w") as f:
+            f.write(code)
+        cmd = [
+            "docker", "run", "--rm",
+            "--network", "none",
+            "--memory", "3g",
+            "-v", "{}:/workspace".format(tmpdir),
+            "-w", "/workspace",
+            image, "sh", "-c", "{} && {}".format(build_cmd, test_cmd),
+        ]
+        start = time.time()
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            return {
+                "variant_name": variant,
+                "success":      r.returncode == 0,
+                "output":       (r.stdout + r.stderr).strip()[-4000:],
+                "returncode":   r.returncode,
+                "duration_ms":  int((time.time() - start) * 1000),
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "variant_name": variant, "success": False,
+                "output": "Timed out after {}s".format(timeout),
+                "returncode": -1, "duration_ms": timeout * 1000,
+            }
+
+if __name__ == "__main__":
+    port = int(os.environ.get("CRUCIBLE_PORT", {{ crucible_port }}))
+    HTTPServer(("0.0.0.0", port), JobHandler).serve_forever()

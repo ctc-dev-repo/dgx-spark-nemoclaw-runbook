@@ -1,0 +1,48 @@
+---
+- name: Verify Docker is available (JetPack 4.6 includes Docker 19.x)
+  ansible.builtin.command: docker info
+  changed_when: false
+
+- name: Create crucible directory
+  ansible.builtin.file:
+    path: "{{ crucible_dir }}"
+    state: directory
+    owner: "{{ jetson_user }}"
+    mode: "0755"
+
+- name: Deploy executor.py
+  ansible.builtin.template:
+    src: executor.py.j2
+    dest: "{{ crucible_dir }}/executor.py"
+    owner: "{{ jetson_user }}"
+    mode: "0755"
+  notify: Restart crucible-executor
+
+- name: Deploy crucible-executor systemd service
+  ansible.builtin.template:
+    src: crucible-executor.service.j2
+    dest: /etc/systemd/system/crucible-executor.service
+    mode: "0644"
+  notify: Restart crucible-executor
+
+- name: Enable and start crucible-executor
+  ansible.builtin.systemd:
+    name: crucible-executor
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for executor health endpoint
+  ansible.builtin.uri:
+    url: "http://localhost:{{ crucible_port }}/health"
+    method: GET
+    status_code: 200
+  retries: 10
+  delay: 3
+
+handlers:
+  - name: Restart crucible-executor
+    ansible.builtin.systemd:
+      name: crucible-executor
+      state: restarted
+      daemon_reload: true

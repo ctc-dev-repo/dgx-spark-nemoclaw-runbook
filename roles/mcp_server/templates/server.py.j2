@@ -1,5 +1,6 @@
 # Managed by Ansible — DGX Spark MCP Orchestration Server
 from mcp.server.fastmcp import FastMCP
+import asyncio
 import httpx
 import json
 import subprocess
@@ -19,6 +20,13 @@ EXPERT_URL   = "http://127.0.0.1:{{ tunnel_expert_port }}/v1"
 VISION_URL   = "http://127.0.0.1:{{ tunnel_vision_port }}/v1"
 VISUAL_URL   = "http://127.0.0.1:{{ tunnel_visual_port }}/v1"
 TUNNEL_KEY   = "/home/{{ jetson_user }}/.ssh/tunnel_key"
+
+CRUCIBLE_NODES = [
+    "http://{{ jm1_ip }}:{{ crucible_port }}",
+    "http://{{ jm2_ip }}:{{ crucible_port }}",
+    "http://{{ jm3_ip }}:{{ crucible_port }}",
+    "http://{{ jm4_ip }}:{{ crucible_port }}",
+]
 
 REVIEWER_SYSTEM = (
     "You are an adversarial read-only code reviewer. You do not write code. "
@@ -137,6 +145,68 @@ async def generate_image(prompt: str, output_path: str, seed: int = 42) -> str:
     log.info("generate_image: %s", output_path)
     dgx_ssh(f"spark-visual '{prompt}' --out {output_path} --seed {seed}")
     return f"Generated: {output_path}"
+
+
+@mcp.tool()
+async def benchmark_implementations(
+    variants: dict,
+    filename: str,
+    build_cmd: str,
+    test_cmd: str,
+    language: str = "rust",
+    timeout_seconds: int = 120,
+) -> str:
+    """Benchmark up to 4 code variants in parallel across CRUCIBLE nodes.
+    variants: dict of {name: code_string}. Returns a comparative report."""
+    if len(variants) > 4:
+        return "Error: max 4 variants per call (one per CRUCIBLE node)."
+
+    available = []
+    async with httpx.AsyncClient(timeout=5.0) as c:
+        for url in CRUCIBLE_NODES:
+            try:
+                r = await c.get(f"{url}/health")
+                if r.status_code == 200:
+                    available.append(url)
+            except Exception:
+                pass
+
+    if not available:
+        return "Error: no CRUCIBLE nodes reachable. Check crucible-executor on jm1-4."
+
+    jobs = [
+        (available[i % len(available)], name, code)
+        for i, (name, code) in enumerate(variants.items())
+    ]
+
+    async def run_one(node_url, name, code):
+        payload = {
+            "variant_name": name, "code": code,
+            "filename": filename, "build_cmd": build_cmd,
+            "test_cmd": test_cmd, "language": language,
+            "timeout_seconds": timeout_seconds,
+        }
+        async with httpx.AsyncClient(timeout=timeout_seconds + 30) as c:
+            r = await c.post(f"{node_url}/execute", json=payload)
+            r.raise_for_status()
+            return r.json()
+
+    results = await asyncio.gather(
+        *[run_one(url, name, code) for url, name, code in jobs],
+        return_exceptions=True,
+    )
+
+    lines = ["# CRUCIBLE Benchmark Results\n"]
+    for r in results:
+        if isinstance(r, Exception):
+            lines.append(f"## ERROR\n{r}\n")
+            continue
+        status = "PASS" if r["success"] else "FAIL"
+        lines.append(
+            f"## {r['variant_name']}  {status}  ({r['duration_ms']}ms)\n"
+            f"```\n{r['output']}\n```\n"
+        )
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

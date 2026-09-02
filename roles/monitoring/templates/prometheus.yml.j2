@@ -15,3 +15,13 @@ scrape_configs:
       - targets: ["localhost:9100"]
         labels:
           device: orin_nano
+
+  - job_name: crucible_nodes
+    static_configs:
+      - targets:
+          - "{{ jm1_ip }}:9100"
+          - "{{ jm2_ip }}:9100"
+          - "{{ jm3_ip }}:9100"
+          - "{{ jm4_ip }}:9100"
+        labels:
+          device: jetson_mate
