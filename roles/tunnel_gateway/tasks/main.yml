@@ -1,0 +1,58 @@
+---
+- name: Install autossh
+  ansible.builtin.apt:
+    name: autossh
+    state: present
+
+- name: Ensure SSH key directory exists
+  ansible.builtin.file:
+    path: "/home/{{ jetson_user }}/.ssh"
+    state: directory
+    owner: "{{ jetson_user }}"
+    mode: "0700"
+
+- name: Generate tunnel SSH key if not present
+  ansible.builtin.command:
+    cmd: ssh-keygen -t ed25519 -C "jorin-tunnel-key" -f /home/{{ jetson_user }}/.ssh/tunnel_key -N ""
+    creates: "/home/{{ jetson_user }}/.ssh/tunnel_key"
+  become_user: "{{ jetson_user }}"
+
+- name: Read tunnel public key
+  ansible.builtin.slurp:
+    src: "/home/{{ jetson_user }}/.ssh/tunnel_key.pub"
+  register: tunnel_pubkey
+
+- name: Authorize tunnel key on DGX Spark
+  ansible.posix.authorized_key:
+    user: "{{ dgx_user }}"
+    key: "{{ tunnel_pubkey.content | b64decode }}"
+    state: present
+  delegate_to: spark
+
+- name: Add DGX Spark to known_hosts
+  ansible.builtin.known_hosts:
+    name: "{{ dgx_ip }}"
+    key: "{{ lookup('pipe', 'ssh-keyscan -t ed25519 ' + dgx_ip) }}"
+    path: "/home/{{ jetson_user }}/.ssh/known_hosts"
+  become_user: "{{ jetson_user }}"
+
+- name: Deploy dgx-tunnels systemd service
+  ansible.builtin.template:
+    src: dgx-tunnels.service.j2
+    dest: /etc/systemd/system/dgx-tunnels.service
+    mode: "0644"
+  notify: Restart dgx-tunnels
+
+- name: Enable and start dgx-tunnels
+  ansible.builtin.systemd:
+    name: dgx-tunnels
+    enabled: true
+    state: started
+    daemon_reload: true
+
+handlers:
+  - name: Restart dgx-tunnels
+    ansible.builtin.systemd:
+      name: dgx-tunnels
+      state: restarted
+      daemon_reload: true

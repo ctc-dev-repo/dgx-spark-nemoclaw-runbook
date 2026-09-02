@@ -1,0 +1,18 @@
+# Managed by Ansible
+[Unit]
+Description=DGX Spark MCP Orchestration Server
+After=network-online.target triage-model.service
+Wants=triage-model.service
+
+[Service]
+Type=simple
+User={{ jetson_user }}
+WorkingDirectory={{ mcp_server_dir }}
+ExecStart={{ mcp_server_dir }}/venv/bin/python server.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

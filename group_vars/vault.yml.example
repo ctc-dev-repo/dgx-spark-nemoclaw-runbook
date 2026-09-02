@@ -1,0 +1,7 @@
+---
+# Copy to vault.yml and encrypt: ansible-vault encrypt group_vars/vault.yml
+# Edit in place: ansible-vault edit group_vars/vault.yml
+
+vault_dgx_user:    "YOUR_DGX_USER"
+vault_jetson_user: "YOUR_JETSON_USER"
+vault_hf_token:    "hf_XXXXXXXXXXXXXXXXXXXXXXXXXXXX"

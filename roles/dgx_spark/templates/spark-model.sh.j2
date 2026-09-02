@@ -1,0 +1,26 @@
+#!/bin/bash
+# Managed by Ansible — spark-model convenience script
+set -euo pipefail
+CMD=${1:-status}
+
+case "$CMD" in
+  reviewer|expert|vision|visual)
+    sudo systemctl start spark-ai-model@$CMD
+    ;;
+  stop-cold)
+    for m in reviewer expert vision visual; do
+      sudo systemctl stop spark-ai-model@$m 2>/dev/null || true
+    done
+    ;;
+  status)
+    for m in reviewer expert vision visual; do
+      printf "%-12s " "${m}:"
+      systemctl is-active spark-ai-model@$m 2>/dev/null || echo "inactive"
+    done
+    nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader
+    ;;
+  *)
+    echo "Usage: spark-model {reviewer|expert|vision|visual|stop-cold|status}"
+    exit 1
+    ;;
+esac

@@ -1,0 +1,88 @@
+---
+# Acceptance verification playbook
+# Run: ansible-playbook playbooks/verify.yml --ask-vault-pass
+- name: Verify all devices reachable
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Ping
+      ansible.builtin.ping:
+
+- name: Verify DGX Spark
+  hosts: dgx_spark
+  become: true
+  tasks:
+    - name: Check GPU visibility
+      ansible.builtin.command: nvidia-smi --query-gpu=name --format=csv,noheader
+      changed_when: false
+      register: gpu
+    - ansible.builtin.debug:
+        msg: "GPU: {{ gpu.stdout }}"
+
+    - name: Check NemoClaw sandbox status
+      ansible.builtin.command: nemo-deepagents software-engineer status
+      become_user: "{{ dgx_user }}"
+      changed_when: false
+      register: nc_status
+    - ansible.builtin.debug:
+        msg: "{{ nc_status.stdout }}"
+
+    - name: Confirm cold service ports are NOT listening on 0.0.0.0
+      ansible.builtin.wait_for:
+        host: "0.0.0.0"
+        port: "{{ item }}"
+        state: stopped
+        timeout: 5
+      loop:
+        - "{{ reviewer_port }}"
+        - "{{ expert_port }}"
+        - "{{ vision_port }}"
+        - "{{ visual_port }}"
+      ignore_errors: true
+
+- name: Verify Jetson Orin Nano
+  hosts: orin_nano
+  tasks:
+    - name: Check triage-model is active
+      ansible.builtin.command: systemctl is-active triage-model
+      changed_when: false
+      register: triage_status
+    - ansible.builtin.debug:
+        msg: "Triage model: {{ triage_status.stdout }}"
+
+    - name: Query triage model API
+      ansible.builtin.uri:
+        url: "http://localhost:{{ triage_port }}/v1/models"
+        method: GET
+        status_code: 200
+
+    - name: Check mcp-server is active
+      ansible.builtin.command: systemctl is-active mcp-server
+      changed_when: false
+      register: mcp_status
+    - ansible.builtin.debug:
+        msg: "MCP server: {{ mcp_status.stdout }}"
+
+    - name: Check dgx-tunnels is active
+      ansible.builtin.command: systemctl is-active dgx-tunnels
+      changed_when: false
+      register: tunnel_status
+    - ansible.builtin.debug:
+        msg: "Tunnels: {{ tunnel_status.stdout }}"
+
+    - name: Check Prometheus is active
+      ansible.builtin.command: systemctl is-active prometheus
+      changed_when: false
+
+    - name: Check Grafana is active
+      ansible.builtin.command: systemctl is-active grafana-server
+      changed_when: false
+
+    - name: Verify Prometheus scrape targets
+      ansible.builtin.uri:
+        url: "http://localhost:9090/api/v1/targets"
+        method: GET
+        status_code: 200
+      register: prom_targets
+    - ansible.builtin.debug:
+        msg: "Prometheus targets: {{ (prom_targets.json.data.activeTargets | length) }} active"

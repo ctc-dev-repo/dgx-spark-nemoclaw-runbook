@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+MODEL=$1
+docker stop "spark-ai-${MODEL}" 2>/dev/null || true
+echo "${MODEL} stopped."

@@ -1,0 +1,32 @@
+---
+# DGX Spark Multi-Model AI Development Environment — simplified 2-device layout
+# Run: ansible-playbook site.yml --ask-vault-pass --ask-become-pass
+# Preflight: ansible-playbook site.yml --syntax-check --ask-vault-pass
+
+- name: Common baseline for all devices
+  hosts: all
+  become: true
+  vars_files:
+    - group_vars/vault.yml
+  roles:
+    - common
+    - node_exporter
+
+- name: DGX Spark — inference server
+  hosts: dgx_spark
+  become: true
+  vars_files:
+    - group_vars/vault.yml
+  roles:
+    - dgx_spark
+
+- name: Jetson Orin Nano — all orchestration
+  hosts: orin_nano
+  become: true
+  vars_files:
+    - group_vars/vault.yml
+  roles:
+    - triage_model
+    - mcp_server
+    - tunnel_gateway
+    - monitoring

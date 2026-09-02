@@ -1,0 +1,41 @@
+---
+- name: Deploy rsyslog server configuration
+  ansible.builtin.template:
+    src: rsyslog-server.conf.j2
+    dest: /etc/rsyslog.d/10-server.conf
+    mode: "0644"
+  notify: Restart rsyslog
+
+- name: Create log directory for remote devices
+  ansible.builtin.file:
+    path: /var/log/stack
+    state: directory
+    owner: syslog
+    group: adm
+    mode: "0755"
+
+- name: Deploy log routing configuration
+  ansible.builtin.copy:
+    dest: /etc/rsyslog.d/20-stack-routing.conf
+    mode: "0644"
+    content: |
+      # Route remote logs to per-device files
+      template(name="DeviceLog" type="string"
+               string="/var/log/stack/%HOSTNAME%.log")
+      if $fromhost-ip != "127.0.0.1" then {
+        action(type="omfile" dynaFile="DeviceLog")
+        stop
+      }
+  notify: Restart rsyslog
+
+- name: Enable and start rsyslog
+  ansible.builtin.systemd:
+    name: rsyslog
+    enabled: true
+    state: started
+
+handlers:
+  - name: Restart rsyslog
+    ansible.builtin.systemd:
+      name: rsyslog
+      state: restarted

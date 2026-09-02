@@ -1,0 +1,17 @@
+# Managed by Ansible
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: dgx_spark
+    static_configs:
+      - targets: ["{{ dgx_ip }}:9100"]
+        labels:
+          device: dgx_spark
+
+  - job_name: orin_nano
+    static_configs:
+      - targets: ["localhost:9100"]
+        labels:
+          device: orin_nano

@@ -1,0 +1,54 @@
+---
+# ── Network ────────────────────────────────────────────────────────────────
+dgx_ip:   "192.168.1.100"
+orin_ip:  "192.168.1.20"
+lan_cidr: "192.168.1.0/24"
+
+# ── Users (actual values come from vault) ──────────────────────────────────
+dgx_user:    "{{ vault_dgx_user }}"
+jetson_user: "{{ vault_jetson_user }}"
+
+# ── Paths ──────────────────────────────────────────────────────────────────
+spark_ai_dir:   "/opt/spark-ai"
+mcp_server_dir: "/opt/mcp-server"
+models_dir:     "/opt/models"
+
+# ── MCP Server ─────────────────────────────────────────────────────────────
+mcp_port: 8765
+
+# ── Triage model ───────────────────────────────────────────────────────────
+triage_port:        11434
+triage_model_file:  "qwen3-4b-q4_k_m.gguf"
+triage_model_repo:  "Qwen/Qwen3-4B-GGUF"
+
+# ── Cold service ports (DGX loopback) ──────────────────────────────────────
+reviewer_port: 8102
+expert_port:   8103
+vision_port:   8104
+visual_port:   8105
+
+# ── Tunnel ports (loopback on Orin Nano — NOT LAN-exposed) ────────────────
+tunnel_reviewer_port: 18102
+tunnel_expert_port:   18103
+tunnel_vision_port:   18104
+tunnel_visual_port:   18105
+
+# ── Model IDs ──────────────────────────────────────────────────────────────
+primary_model_id:  "nvidia/Qwen3.6-35B-A3B-NVFP4"
+reviewer_model_id: "nvidia/NVIDIA-Nemotron-3-30B-Reasoning-NVFP4"
+expert_model_id:   "Qwen/Qwen3-72B-NVFP4"
+vision_model_id:   "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4"
+visual_model_id:   "black-forest-labs/FLUX.2-klein-4B"
+
+# ── NemoClaw ───────────────────────────────────────────────────────────────
+nemoclaw_agent:        "langchain-deepagents-code"
+nemoclaw_sandbox:      "software-engineer"
+nemoclaw_primary_slug: "qwen3.6-35b-a3b-nvfp4"
+
+# ── Monitoring versions ────────────────────────────────────────────────────
+prometheus_version:    "2.53.0"
+node_exporter_version: "1.8.2"
+grafana_version:       "11.0.0"
+
+# ── llama.cpp ──────────────────────────────────────────────────────────────
+llamacpp_repo: "https://github.com/ggerganov/llama.cpp"

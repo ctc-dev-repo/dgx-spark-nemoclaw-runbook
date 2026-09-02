@@ -1,0 +1,19 @@
+# Managed by Ansible
+[Unit]
+Description=DGX Spark cold AI model: %i
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User={{ dgx_user }}
+EnvironmentFile={{ spark_ai_dir }}/config/%i.env
+ExecStart={{ spark_ai_dir }}/bin/start-model.sh %i
+ExecStop={{ spark_ai_dir }}/bin/stop-model.sh %i
+Restart=no
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

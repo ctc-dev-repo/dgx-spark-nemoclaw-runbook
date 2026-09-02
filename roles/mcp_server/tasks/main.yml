@@ -1,0 +1,51 @@
+---
+- name: Create mcp-server directory
+  ansible.builtin.file:
+    path: "{{ mcp_server_dir }}"
+    state: directory
+    owner: "{{ jetson_user }}"
+    mode: "0755"
+
+- name: Create Python virtualenv
+  ansible.builtin.command:
+    cmd: python3 -m venv {{ mcp_server_dir }}/venv
+    creates: "{{ mcp_server_dir }}/venv/bin/python"
+  become_user: "{{ jetson_user }}"
+
+- name: Install MCP server Python dependencies
+  ansible.builtin.pip:
+    name:
+      - mcp
+      - httpx
+    virtualenv: "{{ mcp_server_dir }}/venv"
+    state: present
+  become_user: "{{ jetson_user }}"
+
+- name: Deploy MCP server.py
+  ansible.builtin.template:
+    src: server.py.j2
+    dest: "{{ mcp_server_dir }}/server.py"
+    owner: "{{ jetson_user }}"
+    mode: "0644"
+  notify: Restart mcp-server
+
+- name: Deploy mcp-server systemd service
+  ansible.builtin.template:
+    src: mcp-server.service.j2
+    dest: /etc/systemd/system/mcp-server.service
+    mode: "0644"
+  notify: Restart mcp-server
+
+- name: Enable and start mcp-server
+  ansible.builtin.systemd:
+    name: mcp-server
+    enabled: true
+    state: started
+    daemon_reload: true
+
+handlers:
+  - name: Restart mcp-server
+    ansible.builtin.systemd:
+      name: mcp-server
+      state: restarted
+      daemon_reload: true

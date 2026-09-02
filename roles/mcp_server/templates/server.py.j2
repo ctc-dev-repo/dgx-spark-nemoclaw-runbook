@@ -1,0 +1,144 @@
+# Managed by Ansible — DGX Spark MCP Orchestration Server
+from mcp.server.fastmcp import FastMCP
+import httpx
+import json
+import subprocess
+import logging
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("mcp-server")
+
+mcp = FastMCP("dgx-spark-orchestrator")
+
+# All URLs are loopback — triage runs on same device, tunnels bind 127.0.0.1
+DGX_HOST     = "{{ dgx_ip }}"
+DGX_USER     = "{{ dgx_user }}"
+ORIN_URL     = "http://127.0.0.1:{{ triage_port }}/v1"
+REVIEWER_URL = "http://127.0.0.1:{{ tunnel_reviewer_port }}/v1"
+EXPERT_URL   = "http://127.0.0.1:{{ tunnel_expert_port }}/v1"
+VISION_URL   = "http://127.0.0.1:{{ tunnel_vision_port }}/v1"
+VISUAL_URL   = "http://127.0.0.1:{{ tunnel_visual_port }}/v1"
+TUNNEL_KEY   = "/home/{{ jetson_user }}/.ssh/tunnel_key"
+
+REVIEWER_SYSTEM = (
+    "You are an adversarial read-only code reviewer. You do not write code. "
+    "Identify correctness bugs, missing tests, security risks, concurrency "
+    "hazards, and performance regressions. Propose specific falsifying tests."
+)
+EXPERT_SYSTEM = (
+    "You are a senior systems architect consulted only for hard problems. "
+    "Diagnose root causes, propose hypotheses with falsifying experiments, "
+    "and recommend the minimal change. Do not rewrite working code."
+)
+
+
+def dgx_ssh(cmd: str) -> None:
+    result = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes",
+         "-i", TUNNEL_KEY,
+         f"{DGX_USER}@{DGX_HOST}", cmd],
+        capture_output=True, text=True, timeout=180
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"DGX SSH failed: {result.stderr}")
+    log.info("DGX: %s", cmd)
+
+
+async def triage(problem: str, context: str) -> dict:
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.post(
+            f"{ORIN_URL}/chat/completions",
+            json={
+                "model": "triage",
+                "messages": [
+                    {"role": "system", "content":
+                        "Routing classifier. Decide: expert or reviewer. "
+                        'Reply JSON only: {"route":"expert"|"reviewer",'
+                        '"reason":"...","confidence":0.0-1.0}'},
+                    {"role": "user", "content":
+                        f"Problem: {problem}\nContext: {context}"},
+                ],
+                "max_tokens": 256,
+            }
+        )
+        r.raise_for_status()
+        raw = r.json()["choices"][0]["message"]["content"]
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"route": "reviewer", "reason": "triage parse error", "confidence": 0.0}
+
+
+async def call_vllm(url: str, system: str, user: str,
+                    max_tokens: int = 2048) -> str:
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        r = await client.post(
+            f"{url}/chat/completions",
+            json={
+                "model": "default",
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user",   "content": user},
+                ],
+                "max_tokens": max_tokens,
+            }
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+
+
+@mcp.tool()
+async def review_diff(diff: str, requirements: str, context: str) -> str:
+    """Submit a code diff for adversarial review. Call before every commit."""
+    log.info("review_diff called")
+    user = f"Requirement:\n{requirements}\n\nDiff:\n{diff}\n\nContext:\n{context}"
+    return await call_vllm(REVIEWER_URL, REVIEWER_SYSTEM, user)
+
+
+@mcp.tool()
+async def consult_expert(problem: str, context: str, prior_attempts: str) -> str:
+    """Consult Expert for hard problems. Triage model gates cold-start."""
+    log.info("consult_expert — triaging...")
+    decision = await triage(problem, context)
+    log.info("Triage: %s", decision)
+
+    if decision.get("route") != "expert" or decision.get("confidence", 0.0) < 0.7:
+        return (f"Triage: Expert not warranted. "
+                f"Reason: {decision.get('reason', 'unknown')}")
+
+    dgx_ssh("spark-model stop-cold")
+    dgx_ssh("spark-model expert")
+    try:
+        user = (f"Problem:\n{problem}\n\n"
+                f"Context:\n{context}\n\n"
+                f"Prior attempts:\n{prior_attempts}")
+        return await call_vllm(EXPERT_URL, EXPERT_SYSTEM, user, max_tokens=4096)
+    finally:
+        dgx_ssh("spark-model stop-cold")
+        dgx_ssh("spark-model reviewer")
+
+
+@mcp.tool()
+async def analyze_image(image_path: str, question: str) -> str:
+    """Submit a screenshot or diagram for visual analysis."""
+    log.info("analyze_image: %s", image_path)
+    dgx_ssh("spark-model vision")
+    try:
+        user = f"Question: {question}\nImage path: {image_path}"
+        return await call_vllm(VISION_URL,
+            "Visual analysis assistant. Describe precisely what you see.", user)
+    finally:
+        dgx_ssh("spark-model stop-cold; spark-model reviewer")
+
+
+@mcp.tool()
+async def generate_image(prompt: str, output_path: str, seed: int = 42) -> str:
+    """Generate a raster image asset. Prefer SVG for icons and diagrams."""
+    log.info("generate_image: %s", output_path)
+    dgx_ssh(f"spark-visual '{prompt}' --out {output_path} --seed {seed}")
+    return f"Generated: {output_path}"
+
+
+if __name__ == "__main__":
+    log.info("Starting MCP server...")
+    mcp.run(transport="stdio")

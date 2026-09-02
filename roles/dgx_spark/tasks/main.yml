@@ -1,0 +1,146 @@
+---
+- name: Verify ARM64 architecture
+  ansible.builtin.assert:
+    that: ansible_architecture == "aarch64"
+    fail_msg: "Expected aarch64, got {{ ansible_architecture }}"
+
+- name: Verify nvidia-smi is available
+  ansible.builtin.command: nvidia-smi --query-gpu=name --format=csv,noheader
+  changed_when: false
+  register: gpu_check
+
+- name: Display detected GPU
+  ansible.builtin.debug:
+    msg: "GPU detected: {{ gpu_check.stdout }}"
+
+- name: Verify Docker is running
+  ansible.builtin.command: docker info
+  changed_when: false
+
+- name: Verify nvidia-container-toolkit
+  ansible.builtin.command: nvidia-ctk --version
+  changed_when: false
+
+- name: Create spark-ai directory tree
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ dgx_user }}"
+    group: "{{ dgx_user }}"
+    mode: "0755"
+  loop:
+    - "{{ spark_ai_dir }}"
+    - "{{ spark_ai_dir }}/config"
+    - "{{ spark_ai_dir }}/bin"
+    - "{{ spark_ai_dir }}/logs"
+    - /srv/repos
+
+- name: Deploy cold model environment files
+  ansible.builtin.template:
+    src: model.env.j2
+    dest: "{{ spark_ai_dir }}/config/{{ item.role }}.env"
+    owner: "{{ dgx_user }}"
+    mode: "0640"
+  loop:
+    - { role: reviewer, model_id: "{{ reviewer_model_id }}", port: "{{ reviewer_port }}" }
+    - { role: expert,   model_id: "{{ expert_model_id }}",   port: "{{ expert_port }}"   }
+    - { role: vision,   model_id: "{{ vision_model_id }}",   port: "{{ vision_port }}"   }
+    - { role: visual,   model_id: "{{ visual_model_id }}",   port: "{{ visual_port }}"   }
+  no_log: true
+
+- name: Deploy start-model.sh
+  ansible.builtin.template:
+    src: start-model.sh.j2
+    dest: "{{ spark_ai_dir }}/bin/start-model.sh"
+    owner: "{{ dgx_user }}"
+    mode: "0755"
+
+- name: Deploy stop-model.sh
+  ansible.builtin.template:
+    src: stop-model.sh.j2
+    dest: "{{ spark_ai_dir }}/bin/stop-model.sh"
+    owner: "{{ dgx_user }}"
+    mode: "0755"
+
+- name: Deploy spark-model convenience script
+  ansible.builtin.template:
+    src: spark-model.sh.j2
+    dest: /usr/local/bin/spark-model
+    mode: "0755"
+
+- name: Deploy spark-ai-model@ systemd template
+  ansible.builtin.template:
+    src: spark-ai-model@.service.j2
+    dest: /etc/systemd/system/spark-ai-model@.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Ensure cold services are disabled at boot
+  ansible.builtin.systemd:
+    name: "spark-ai-model@{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - reviewer
+    - expert
+    - vision
+    - visual
+  ignore_errors: true
+
+- name: Install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: Set ufw default deny incoming
+  community.general.ufw:
+    default: deny
+    direction: incoming
+
+- name: Allow SSH from LAN only
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    src: "{{ lan_cidr }}"
+
+- name: Enable ufw
+  community.general.ufw:
+    state: enabled
+
+# NOTE: NemoClaw installation commands evolve with each NVIDIA release.
+# Validate against https://build.nvidia.com/spark/nemoclaw/instructions
+- name: Check if NemoClaw is already installed
+  ansible.builtin.command: nemo-deepagents --version
+  changed_when: false
+  failed_when: false
+  register: nemoclaw_check
+
+- name: Download NemoClaw installer
+  ansible.builtin.get_url:
+    url: "https://build.nvidia.com/spark/nemoclaw/installer.sh"
+    dest: /tmp/nemoclaw-installer.sh
+    mode: "0755"
+  when: nemoclaw_check.rc != 0
+
+- name: Run NemoClaw installer
+  ansible.builtin.command: /tmp/nemoclaw-installer.sh
+  environment:
+    HF_TOKEN: "{{ vault_hf_token }}"
+  when: nemoclaw_check.rc != 0
+  become_user: "{{ dgx_user }}"
+
+- name: Onboard NemoClaw software-engineer sandbox
+  ansible.builtin.command: >
+    nemo-deepagents onboard
+    --agent {{ nemoclaw_agent }}
+    --sandbox {{ nemoclaw_sandbox }}
+    --primary-model {{ nemoclaw_primary_slug }}
+  become_user: "{{ dgx_user }}"
+  changed_when: true
+  when: nemoclaw_check.rc != 0
+
+handlers:
+  - name: Reload systemd
+    ansible.builtin.systemd:
+      daemon_reload: true

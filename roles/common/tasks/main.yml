@@ -1,0 +1,47 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install common packages
+  ansible.builtin.apt:
+    name:
+      - openssh-server
+      - python3
+      - python3-pip
+      - python3-venv
+      - git
+      - curl
+      - wget
+      - htop
+    state: present
+
+- name: Ensure SSH is enabled and running
+  ansible.builtin.systemd:
+    name: ssh
+    enabled: true
+    state: started
+
+- name: Configure SSH server — keep-alive
+  ansible.builtin.blockinfile:
+    path: /etc/ssh/sshd_config
+    block: |
+      ClientAliveInterval 30
+      ClientAliveCountMax 6
+    marker: "# {mark} ANSIBLE MANAGED — keep-alive"
+  notify: Restart sshd
+
+- name: Populate /etc/hosts with stack devices
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    block: |
+      {{ dgx_ip }}   spark spark.local
+      {{ orin_ip }}  jorin jorin.local
+    marker: "# {mark} ANSIBLE MANAGED — stack hosts"
+
+handlers:
+  - name: Restart sshd
+    ansible.builtin.systemd:
+      name: ssh
+      state: restarted

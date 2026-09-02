@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+MODEL=$1
+source {{ spark_ai_dir }}/config/${MODEL}.env
+
+echo "Starting ${MODEL} (${MODEL_ID}) on port ${PORT}..."
+docker run -d --rm --gpus all \
+  --name "spark-ai-${MODEL}" \
+  --network host \
+  -e HF_TOKEN="${HF_TOKEN}" \
+  vllm/vllm-openai:latest \
+  --model "${MODEL_ID}" \
+  --host 127.0.0.1 \
+  --port "${PORT}" \
+  --served-model-name "${MODEL}" \
+  --dtype auto
+
+for i in $(seq 1 60); do
+  if curl -sf "http://127.0.0.1:${PORT}/v1/models" > /dev/null 2>&1; then
+    echo "${MODEL} is ready."
+    exit 0
+  fi
+  sleep 3
+done
+echo "ERROR: ${MODEL} did not become ready in 180s" >&2
+exit 1

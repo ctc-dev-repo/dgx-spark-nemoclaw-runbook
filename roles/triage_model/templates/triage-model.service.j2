@@ -1,0 +1,21 @@
+# Managed by Ansible
+[Unit]
+Description=DGX Spark triage model ({{ triage_model_file }})
+After=network.target
+
+[Service]
+Type=simple
+User={{ jetson_user }}
+ExecStart=/usr/local/bin/llama-server \
+  -m {{ models_dir }}/{{ triage_model_file }} \
+  --host 0.0.0.0 \
+  --port {{ triage_port }} \
+  -c 4096 \
+  -ngl 999
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

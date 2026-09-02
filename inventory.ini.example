@@ -1,0 +1,9 @@
+[dgx_spark]
+spark ansible_host=192.168.1.100 ansible_user={{ vault_dgx_user }}
+
+[orin_nano]
+jorin ansible_host=192.168.1.20 ansible_user={{ vault_jetson_user }}
+
+[all:vars]
+ansible_ssh_private_key_file=~/.ssh/id_ed25519
+ansible_python_interpreter=/usr/bin/python3

@@ -1,0 +1,27 @@
+# Managed by Ansible
+# Tunnels bind to 127.0.0.1 only — model APIs are NOT exposed on the LAN
+[Unit]
+Description=DGX Spark cold service SSH tunnels
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ jetson_user }}
+Environment=AUTOSSH_GATETIME=0
+ExecStart=/usr/bin/autossh -M 0 -N \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o StrictHostKeyChecking=no \
+  -o BatchMode=yes \
+  -i /home/{{ jetson_user }}/.ssh/tunnel_key \
+  -L 127.0.0.1:{{ tunnel_reviewer_port }}:127.0.0.1:{{ reviewer_port }} \
+  -L 127.0.0.1:{{ tunnel_expert_port }}:127.0.0.1:{{ expert_port }} \
+  -L 127.0.0.1:{{ tunnel_vision_port }}:127.0.0.1:{{ vision_port }} \
+  -L 127.0.0.1:{{ tunnel_visual_port }}:127.0.0.1:{{ visual_port }} \
+  {{ dgx_user }}@{{ dgx_ip }}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

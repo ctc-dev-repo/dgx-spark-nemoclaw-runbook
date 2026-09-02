@@ -1,0 +1,88 @@
+---
+- name: Install llama.cpp build dependencies
+  ansible.builtin.apt:
+    name:
+      - build-essential
+      - cmake
+      - libcurl4-openssl-dev
+    state: present
+
+- name: Check if llama-server is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/llama-server
+  register: llama_installed
+
+- name: Clone llama.cpp
+  ansible.builtin.git:
+    repo: "{{ llamacpp_repo }}"
+    dest: /opt/llama.cpp
+    version: HEAD
+    depth: 1
+  when: not llama_installed.stat.exists
+
+- name: Build llama.cpp with CUDA support
+  ansible.builtin.shell: |
+    cmake -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release
+    cmake --build build --config Release -j$(nproc)
+  args:
+    chdir: /opt/llama.cpp
+    creates: /opt/llama.cpp/build/bin/llama-server
+  when: not llama_installed.stat.exists
+
+- name: Install llama-server binary
+  ansible.builtin.copy:
+    src: /opt/llama.cpp/build/bin/llama-server
+    dest: /usr/local/bin/llama-server
+    mode: "0755"
+    remote_src: true
+  when: not llama_installed.stat.exists
+  notify: Restart triage-model
+
+- name: Create models directory
+  ansible.builtin.file:
+    path: "{{ models_dir }}"
+    state: directory
+    owner: "{{ jetson_user }}"
+    mode: "0755"
+
+- name: Install huggingface_hub
+  ansible.builtin.pip:
+    name: huggingface_hub
+    state: present
+
+- name: Check if triage model is already downloaded
+  ansible.builtin.stat:
+    path: "{{ models_dir }}/{{ triage_model_file }}"
+  register: model_downloaded
+
+- name: Download triage model from Hugging Face
+  ansible.builtin.command: >
+    huggingface-cli download {{ triage_model_repo }}
+    {{ triage_model_file }}
+    --local-dir {{ models_dir }}
+  environment:
+    HF_TOKEN: "{{ vault_hf_token }}"
+  become_user: "{{ jetson_user }}"
+  when: not model_downloaded.stat.exists
+  changed_when: true
+
+- name: Deploy triage-model systemd service
+  ansible.builtin.template:
+    src: triage-model.service.j2
+    dest: /etc/systemd/system/triage-model.service
+    mode: "0644"
+  notify: Restart triage-model
+
+- name: Enable and start triage-model
+  ansible.builtin.systemd:
+    name: triage-model
+    enabled: true
+    state: started
+    daemon_reload: true
+
+handlers:
+  - name: Restart triage-model
+    ansible.builtin.systemd:
+      name: triage-model
+      state: restarted
+      daemon_reload: true
